@@ -63,23 +63,68 @@ function loadMessages() {
 
 // Saves a new message on the Firebase DB.
 function saveMessage(messageText) {
-  // TODO 8: Push a new message to Firebase.
+  // Add a new message entry to the Firebase Database.
+  return firebase.database().ref('/messages/').push({
+    name: getUserName(),
+    text: messageText,
+    profilePicUrl: getProfilePicUrl()
+  }).catch(function(error) {
+    console.error('Error writing new message to Firebase Database', error);
+  });
 }
 
 // Saves a new message containing an image in Firebase.
 // This first saves the image in Firebase storage.
 function saveImageMessage(file) {
-  // TODO 9: Posts a new image as a message.
+  // 1 - We add a message with a loading icon that will get updated with the shared image.
+  firebase.database().ref('/messages/').push({
+    name: getUserName(),
+    imageUrl: LOADING_IMAGE_URL,
+    profilePicUrl: getProfilePicUrl()
+  }).then(function(messageRef) {
+    // 2 - Upload the image to Cloud Storage.
+    var filePath = firebase.auth().currentUser.uid + '/' + messageRef.key + '/' + file.name;
+    return firebase.storage().ref(filePath).put(file).then(function(fileSnapshot) {
+      // 3 - Generate a public URL for the file.
+      return fileSnapshot.ref.getDownloadURL().then((url) => {
+        // 4 - Update the chat message placeholder with the image's URL.
+        return messageRef.update({
+          imageUrl: url,
+          storageUri: fileSnapshot.metadata.fullPath
+        });
+      });
+    });
+  }).catch(function(error) {
+    console.error('There was an error uploading a file to Cloud Storage:', error);
+  });
 }
 
 // Saves the messaging device token to the datastore.
 function saveMessagingDeviceToken() {
-  // TODO 10: Save the device token in the realtime datastore
+  firebase.messaging().getToken().then(function(currentToken) {
+    if (currentToken) {
+      console.log('Got FCM device token:', currentToken);
+      // Saving the Device Token to the datastore.
+      firebase.database().ref('/fcmTokens').child(currentToken)
+          .set(firebase.auth().currentUser.uid);
+    } else {
+      // Need to request permissions to show notifications.
+      requestNotificationsPermissions();
+    }
+  }).catch(function(error){
+    console.error('Unable to get messaging token.', error);
+  });
 }
 
 // Requests permissions to show notifications.
 function requestNotificationsPermissions() {
-  // TODO 11: Request permissions to send notifications.
+  console.log('Requesting notifications permission...');
+  firebase.messaging().requestPermission().then(function() {
+    // Notification permission granted.
+    saveMessagingDeviceToken();
+  }).catch(function(error) {
+    console.error('Unable to get permission to notify.', error);
+  });
 }
 
 // Triggered when a file is selected via the media picker.
